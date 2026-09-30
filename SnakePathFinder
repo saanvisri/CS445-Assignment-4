@@ -1,0 +1,327 @@
+
+import java.util.List;
+
+/**
+ * Provides pathfinding in a grid with snake obstacles and sliding mechanics.
+ * A path cannot pass through snake body cells, but it may enter a snake head,
+ * in which case the path slides along the snake to exit one cell beyond the tail
+ * in the direction of the final segment.
+ */
+public class SnakePathFinder {
+
+    /**
+     * Four orthogonal movement directions: up, down, left, right.
+     */
+    private static final int[][] DIRECTIONS = {
+        { -1, 0 }, // up
+        { 1, 0 },  // down
+        { 0, -1 }, // left
+        { 0, 1 }   // right
+    };
+
+    /**
+     * Determines whether a path exists from start to end in a grid with embedded snakes.
+     * A path cannot go through any snake body cell, but may enter a snake head,
+     * in which case it slides through the snake's body and exits from the tail
+     * in the same direction as the last body segment.
+     *
+     * @param numRows number of rows in the grid
+     * @param numCols number of columns in the grid
+     * @param snakes  list of snakes in the grid; each snake is iterable from head to tail
+     * @param start   starting position
+     * @param end     ending position
+     * @return true if a valid path exists from start to end, false otherwise
+     */
+    public static boolean pathExists(
+        int numRows,
+        int numCols,
+        List<Snake> snakes,
+        Position start,
+        Position end
+    ) {
+        if (!inBounds(start, numRows, numCols) || !inBounds(end, numRows, numCols)) {
+            return false;
+        }
+
+        // Cannot start on a snake body cell.
+        if (isSnakeBodyCell(start, snakes)) {
+            return false;
+        }
+
+        boolean[][] visited = new boolean[numRows][numCols];
+        return search(start, end, numRows, numCols, snakes, visited);
+    }
+
+    /**
+     * Recursive backtracking search used to determine whether a path exists.
+     *
+     * @param current the position currently being explored
+     * @param end the goal position
+     * @param numRows total number of rows in the grid
+     * @param numCols total number of columns in the grid
+     * @param snakes list of snakes in the grid
+     * @param visited grid of visited cells to avoid revisiting
+     * @return true if a valid path from the current position to the end exists, false otherwise
+     */
+    private static boolean search(
+        Position current,
+        Position end,
+        int numRows,
+        int numCols,
+        List<Snake> snakes,
+        boolean[][] visited
+    ) {
+        if (!inBounds(current, numRows, numCols)) {
+            return false;
+        }
+
+        if (visited[current.row][current.col]) {
+            return false;
+        }
+
+        if (isSnakeBodyCell(current, snakes)) {
+            return false;
+        }
+
+        visited[current.row][current.col] = true;
+
+        if (current.equals(end)) {
+            return true;
+        }
+
+        for (int i = 0; i < DIRECTIONS.length; i++) {
+            int newRow = current.row + DIRECTIONS[i][0];
+            int newCol = current.col + DIRECTIONS[i][1];
+            Position next = new Position(newRow, newCol);
+
+            if (tryNextMove(next, end, numRows, numCols, snakes, visited)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Attempts a single step in the search from the current position to the given next position.
+     * This handles empty cells and entering snake heads (which trigger sliding).
+     *
+     * @param next the candidate next position to step into
+     * @param end the goal position
+     * @param numRows total number of rows in the grid
+     * @param numCols total number of columns in the grid
+     * @param snakes list of snakes in the grid
+     * @param visited grid of visited cells
+     * @return true if moving (and possibly sliding) through this cell can reach the end, false otherwise
+     */
+    private static boolean tryNextMove(
+        Position next,
+        Position end,
+        int numRows,
+        int numCols,
+        List<Snake> snakes,
+        boolean[][] visited
+    ) {
+        if (!inBounds(next, numRows, numCols)) {
+            return false;
+        }
+
+        if (isSnakeBodyCell(next, snakes)) {
+            return false;
+        }
+
+        if (isSnakeHeadCell(next, snakes)) {
+            // Entering a snake head triggers a slide.
+            Position slideOut = slideThroughSnake(next, snakes, numRows, numCols);
+            if (slideOut == null) {
+                return false;
+            }
+            if (visited[slideOut.row][slideOut.col]) {
+                return false;
+            }
+            return search(slideOut, end, numRows, numCols, snakes, visited);
+        } else {
+            if (visited[next.row][next.col]) {
+                return false;
+            }
+            return search(next, end, numRows, numCols, snakes, visited);
+        }
+    }
+
+    /**
+     * Checks whether the given position is inside any snake body (excluding heads).
+     *
+     * @param p the position to check
+     * @param snakes the list of snakes in the grid
+     * @return true if the position is a snake body cell (not a head), false otherwise
+     */
+    private static boolean isSnakeBodyCell(Position p, List<Snake> snakes) {
+        for (Snake s : snakes) {
+            boolean first = true;
+            for (Position seg : s) {
+                if (first) {
+                    // Skip head segment.
+                    first = false;
+                } else {
+                    if (seg.equals(p)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks whether the given position is a snake head of any snake.
+     *
+     * @param p the position to check
+     * @param snakes the list of snakes in the grid
+     * @return true if the position is the head of at least one snake, false otherwise
+     */
+    private static boolean isSnakeHeadCell(Position p, List<Snake> snakes) {
+        for (Snake s : snakes) {
+            boolean first = true;
+            for (Position seg : s) {
+                if (first) {
+                    if (seg.equals(p)) {
+                        return true;
+                    }
+                    // Only first segment is the head, so break.
+                    first = false;
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Finds the snake whose head is at the given position.
+     *
+     * @param head the position of the snake head
+     * @param snakes the list of snakes in the grid
+     * @return the snake whose head is at the given position, or null if none
+     */
+    private static Snake findSnakeByHead(Position head, List<Snake> snakes) {
+        for (Snake s : snakes) {
+            boolean first = true;
+            for (Position seg : s) {
+                if (first) {
+                    if (seg.equals(head)) {
+                        return s;
+                    }
+                    first = false;
+                    break;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Computes the slide-out cell when entering the head of a snake.
+     * Sliding follows the snake from head to tail, then exits one cell beyond
+     * the tail in the direction of the final segment. If the slide-out cell
+     * is another snake head, this method will recursively slide through that
+     * snake as well (chained sliding).
+     *
+     * @param head the position of the head being entered
+     * @param snakes the list of snakes in the grid
+     * @param numRows total number of rows in the grid
+     * @param numCols total number of columns in the grid
+     * @return the final slide-out cell after following all chained slides,
+     *         or null if the slide is invalid
+     */
+    private static Position slideThroughSnake(
+        Position head,
+        List<Snake> snakes,
+        int numRows,
+        int numCols
+    ) {
+        // Depth guard prevents infinite loops if snakes form a cycle of heads.
+        return slideThroughSnake(head, snakes, numRows, numCols, 0);
+    }
+
+    /**
+     * Helper for slideThroughSnake that tracks recursion depth to avoid cycles.
+     *
+     * @param head the position of the head being entered
+     * @param snakes the list of snakes in the grid
+     * @param numRows total number of rows in the grid
+     * @param numCols total number of columns in the grid
+     * @param depth current recursion depth for chained slides
+     * @return the final slide-out cell, or null if the slide is invalid
+     */
+    private static Position slideThroughSnake(
+        Position head,
+        List<Snake> snakes,
+        int numRows,
+        int numCols,
+        int depth
+    ) {
+        if (depth > snakes.size()) {
+            // Defensive: too many chained slides implies a cycle.
+            return null;
+        }
+
+        Snake snake = findSnakeByHead(head, snakes);
+        if (snake == null) {
+            return null;
+        }
+
+        Position secondLast = null;
+        Position tail = null;
+        boolean firstSegment = true;
+
+        for (Position seg : snake) {
+            if (firstSegment) {
+                // First segment is the head.
+                tail = seg;
+                firstSegment = false;
+            } else {
+                // Shift tail/secondLast window along the snake.
+                secondLast = tail;
+                tail = seg;
+            }
+        }
+
+        if (secondLast == null) {
+            // No direction for the final segment (single-cell snake).
+            return null;
+        }
+
+        int dr = tail.row - secondLast.row;
+        int dc = tail.col - secondLast.col;
+
+        Position exit = new Position(tail.row + dr, tail.col + dc);
+
+        if (!inBounds(exit, numRows, numCols)) {
+            return null;
+        }
+
+        // Slide-out cell must not be any snake body cell.
+        if (isSnakeBodyCell(exit, snakes)) {
+            return null;
+        }
+
+        // If we slide into another snake's head, chain the slide.
+        if (isSnakeHeadCell(exit, snakes)) {
+            return slideThroughSnake(exit, snakes, numRows, numCols, depth + 1);
+        }
+
+        return exit;
+    }
+
+    /**
+     * Checks whether a position lies within the bounds of the grid.
+     *
+     * @param p the position to check
+     * @param numRows total number of rows in the grid
+     * @param numCols total number of columns in the grid
+     * @return true if the position is inside the grid, false otherwise
+     */
+    private static boolean inBounds(Position p, int numRows, int numCols) {
+        return p.row >= 0 && p.row < numRows && p.col >= 0 && p.col < numCols;
+    }
+}
